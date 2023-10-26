@@ -7,20 +7,17 @@ use uuid::Uuid;
 use crate::errors::Error;
 
 #[async_trait]
-pub trait LogsRepository : Repository<LogEntity> {
+pub trait LogRepository {
+    async fn insert(&self, entity: LogEntity); // Consumes ownership. After insert T should not be used
     async fn get_batch_by_entity_type(&self, entity_type: &str, continuation_token: &str, take: u32, descending: bool) -> (Vec<LogEntity>, String);
     async fn get_batch_by_entity(&self, entity_id: Uuid, continuation_token: &str, take: u32, descending: bool) -> (Vec<LogEntity>, String);
 }
 
 #[async_trait]
-pub trait Repository<T> {
-    async fn get_by_id(&self, id: Uuid) -> Result<T, Error>;
-    async fn insert(&self, entity: T); // Consumes ownership. After insert T should not be used
+pub trait TaskRepository {
+    async fn get_by_id(&self, id: Uuid) -> Result<TaskEntity, Error>;
+    async fn insert(&self, entity: TaskEntity); // Consumes ownership. After insert T should not be used
     async fn delete(&self, id: Uuid) -> Result<(), Error>;
-}
-
-#[async_trait]
-pub trait TasksRepository : Repository<TaskEntity> {
     async fn get_subtasks(&self, task_id: Uuid) -> Vec<TaskEntity>;
     async fn get_root_task_batch(&self, take: u32, continuation_token: &str, sort_by: &str, descending: bool) -> (Vec<TaskEntity>, String);
     async fn search_tasks(&self, phrase: &str, take: u32, continuation_token: &str) -> (Vec<TaskSearchEntity>, String);

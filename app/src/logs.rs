@@ -2,13 +2,17 @@ use chrono::Utc;
 use domain::models::LogEntity;
 use uuid::Uuid;
 
-use crate::{repos::LogsRepository, dtos::{TaskAction, LogEntryDto}};
+use crate::{repos::LogRepository, dtos::{TaskAction, LogEntryDto}};
 
-pub struct LogsService {
-    repo: Box<dyn LogsRepository>
+pub struct LogService {
+    repo: Box<dyn LogRepository>
 }
 
-impl LogsService {
+impl LogService {
+    pub fn new(repo: Box<dyn LogRepository>) -> LogService {
+        LogService { repo }
+    }
+
     pub async fn log_task_action(&self, action: TaskAction, entity_id: Option<Uuid>, entity_type: Option<&str>, payload: Option<&str>) {
         let log_entry = LogEntity {
             id: Uuid::new_v4(),

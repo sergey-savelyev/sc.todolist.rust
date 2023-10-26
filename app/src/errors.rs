@@ -1,8 +1,10 @@
 use uuid::Uuid;
 
+#[derive(Debug)]
 pub enum Error {
     EntityNotFound(String),
-    InvalidRootBinding(String)
+    InvalidRootBinding(String),
+    DbError(String),
 }
 
 impl Error {

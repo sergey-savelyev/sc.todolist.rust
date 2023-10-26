@@ -1,15 +1,22 @@
+use std::rc::Rc;
+
 use domain::models::TaskEntity;
 
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::{dtos::{TaskFullDto, UpsertTaskDto, TaskSearchDto, TaskDetailedDto}, repos::TasksRepository, errors::Error};
+use crate::{dtos::{TaskFullDto, UpsertTaskDto, TaskSearchDto, TaskDetailedDto, TaskAction}, repos::TaskRepository, errors::Error, logs::LogService};
 
 pub struct TaskService {
-    repo: Box<dyn TasksRepository>
+    repo: Box<dyn TaskRepository>,
+    log_service: Rc<LogService>
 }
 
 impl TaskService {
+    pub fn new(repo: Box<dyn TaskRepository>, log_service: Rc<LogService>) -> TaskService {
+        TaskService { repo, log_service }
+    }
+
     pub async fn get_root_task_batch(&self, take: u32, continuation_token: &str, sort_by: &str, descending: bool) -> (Vec<TaskDetailedDto>, String) {
         let (entities, ct) = self.repo.get_root_task_batch(take, continuation_token, sort_by, descending).await;
 
@@ -41,6 +48,7 @@ impl TaskService {
         };
 
         self.repo.insert(entity).await;
+        self.log_service.log_task_action(TaskAction::Create, Some(id), Some("TaskEntity"), None).await;
 
         id
     }
@@ -49,6 +57,8 @@ impl TaskService {
         self.repo
             .update_task(task_id, details.summary.as_str(), details.description.as_deref(), details.due_date, details.priority.as_model(), details.status.as_model())
             .await?;
+
+        self.log_service.log_task_action(TaskAction::Update, Some(task_id), Some("TaskEntity"), None).await;
 
         Ok(())
     }
@@ -65,11 +75,17 @@ impl TaskService {
             }
         }
 
-        Ok(self.repo.update_task_root(task_id, new_root_id).await?)
+        self.repo.update_task_root(task_id, new_root_id).await?;
+        self.log_service.log_task_action(TaskAction::RootChanged, Some(task_id), Some("TaskEntity"), None).await;
+
+        Ok(())
     }
 
     pub async fn delete_task(&self, task_id: Uuid) -> Result<(), Error> {
-        Ok(self.repo.delete(task_id).await?)
+        self.repo.delete(task_id).await?;
+        self.log_service.log_task_action(TaskAction::Delete, Some(task_id), Some("TaskEntity"), None).await;
+
+        Ok(())
     }
 
     pub async fn search_task(&self, phrase: &str, take: u32, continuation_token: &str) -> (Vec<TaskSearchDto>, String) {
