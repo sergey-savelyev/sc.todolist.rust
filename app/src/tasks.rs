@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use domain::models::TaskEntity;
 
@@ -8,16 +8,16 @@ use uuid::Uuid;
 use crate::{dtos::{TaskFullDto, UpsertTaskDto, TaskSearchDto, TaskDetailedDto, TaskAction}, repos::TaskRepository, errors::Error, logs::LogService};
 
 pub struct TaskService {
-    repo: Box<dyn TaskRepository>,
-    log_service: Rc<LogService>
+    repo: Arc<dyn TaskRepository>,
+    log_service: Arc<LogService>
 }
 
 impl TaskService {
-    pub fn new(repo: Box<dyn TaskRepository>, log_service: Rc<LogService>) -> TaskService {
+    pub fn new(repo: Arc<dyn TaskRepository>, log_service: Arc<LogService>) -> TaskService {
         TaskService { repo, log_service }
     }
 
-    pub async fn get_root_task_batch(&self, take: u32, continuation_token: &str, sort_by: &str, descending: bool) -> (Vec<TaskDetailedDto>, String) {
+    pub async fn get_root_task_batch(&self, take: i32, continuation_token: &str, sort_by: &str, descending: bool) -> (Vec<TaskDetailedDto>, String) {
         let (entities, ct) = self.repo.get_root_task_batch(take, continuation_token, sort_by, descending).await;
 
         (entities.iter().map(|e| TaskDetailedDto::new(e)).collect(), ct)
@@ -34,7 +34,7 @@ impl TaskService {
         Ok(TaskFullDto::new(&entity, root_entity.as_ref(), &subtasks))
     }
 
-    pub async fn create_task(&self, details: &UpsertTaskDto) -> Uuid {
+    pub async fn create_task(&self, details: &UpsertTaskDto) -> Result<Uuid, Error> {
         let id = Uuid::new_v4();
         let entity = TaskEntity {
             id,
@@ -47,10 +47,10 @@ impl TaskService {
             status: details.status.as_model()
         };
 
-        self.repo.insert(entity).await;
+        self.repo.insert(entity).await?;
         self.log_service.log_task_action(TaskAction::Create, Some(id), Some("TaskEntity"), None).await;
 
-        id
+        Ok(id)
     }
 
     pub async fn update_task(&self, task_id: Uuid, details: &UpsertTaskDto) -> Result<(), Error>{
@@ -88,7 +88,7 @@ impl TaskService {
         Ok(())
     }
 
-    pub async fn search_task(&self, phrase: &str, take: u32, continuation_token: &str) -> (Vec<TaskSearchDto>, String) {
+    pub async fn search_tasks(&self, phrase: &str, take: i32, continuation_token: &str) -> (Vec<TaskSearchDto>, String) {
         let (entities, ct) = self.repo.search_tasks(phrase, take, continuation_token).await;
         (entities.iter().map(|e| TaskSearchDto::new(e)).collect(), ct)
     }

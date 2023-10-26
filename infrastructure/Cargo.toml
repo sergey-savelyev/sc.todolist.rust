@@ -9,14 +9,7 @@ edition = "2021"
 domain = { path = "../domain" }
 app = { path = "../app" }
 tokio = { version = "1", features = ["full"] }
-sqlx = { version = "0.7", features = [ "runtime-tokio", "mysql", "chrono" ] }
+sqlx = { version = "0.7", features = [ "runtime-tokio", "postgres", "chrono", "uuid" ] }
 async-trait = "0.1.74"
 chrono = { version = "0.4" }
-
-[dependencies.uuid]
-version = "1.5.0"
-features = [
-    "v4",                # Lets you generate random UUIDs
-    "fast-rng",          # Use a faster (but still sufficiently random) RNG
-    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
-]
+uuid = { version = "1.5.0", features = [ "v4", "fast-rng", "serde" ] }

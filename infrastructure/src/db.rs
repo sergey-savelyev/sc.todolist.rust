@@ -3,7 +3,7 @@ use domain::models::{TaskEntity, LogEntity};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{mysql::{MySqlPool, MySqlRow}, Row};
+use sqlx::{postgres::{PgPool, PgRow}, Row};
 use uuid::Uuid;
 
 use crate::convert;
@@ -11,21 +11,21 @@ use crate::convert;
 pub struct TaskStorage {
     // At first I intended to use Arc (thread-safe ref count pointer)
     // But then I found that MySqlPool implements an Arc pointer itself :) 
-    pool: MySqlPool
+    pool: PgPool
 }
 
 pub struct LogStorage {
-    pool: MySqlPool
+    pool: PgPool
 }
 
 impl TaskStorage {
-    pub fn new(pool: MySqlPool) -> TaskStorage {
+    pub fn new(pool: PgPool) -> TaskStorage {
         TaskStorage { pool }
     }
 }
 
 impl LogStorage {
-    pub fn new(pool: MySqlPool) -> LogStorage {
+    pub fn new(pool: PgPool) -> LogStorage {
         LogStorage { pool }
     }
 }
@@ -34,9 +34,9 @@ impl LogStorage {
 impl TaskRepository for TaskStorage {
     async fn get_by_id(&self, id: Uuid) -> Result<TaskEntity, Error> {
         let result = 
-            sqlx::query("SELECT * FROM Tasks WHERE Id = ?")
-                .bind(id.to_string())
-                .map(|row: MySqlRow| {
+            sqlx::query("SELECT * FROM Tasks WHERE Id = $1")
+                .bind(id)
+                .map(|row: PgRow| {
                     convert::row_to_task_entity(&row)
                 })
                 .fetch_optional(&self.pool)
@@ -50,25 +50,30 @@ impl TaskRepository for TaskStorage {
         Err(Error::EntityNotFound(id.to_string()))
     }
 
-    async fn insert(&self, entity: TaskEntity) {
-        let _ = 
-            sqlx::query("INSERT INTO Tasks (Id, RootTaskId, Summary, Description, CreateDate, DueDate, Priority, Status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                .bind(entity.id.to_string())
-                .bind(entity.root_task_id.map_or(String::from("NULL"), |u| u.to_string()))
+    async fn insert(&self, entity: TaskEntity) -> Result<(), Error> {
+        let result = 
+            sqlx::query("INSERT INTO Tasks (Id, Summary, Description, CreateDate, DueDate, Priority, Status) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+                .bind(entity.id)
                 .bind(entity.summary)
                 .bind(entity.description)
                 .bind(entity.create_date)
                 .bind(entity.due_date)
-                .bind(convert::priority_to_str(entity.priority))
-                .bind(convert::status_to_str(entity.status))
+                .bind(convert::priority_to_i16(entity.priority))
+                .bind(convert::status_to_i16(entity.status))
                 .execute(&self.pool)
                 .await;
+
+            if let Err(err) = result {
+                return Err(Error::DbError(err.to_string()));
+            }
+
+            Ok(())
         }
 
     async fn delete(&self, id: Uuid) -> Result<(), Error> {
         let affected = 
-            sqlx::query("DELETE FROM Tasks WHERE Id = ?")
-                .bind(id.to_string())
+            sqlx::query("DELETE FROM Tasks WHERE Id = $1")
+                .bind(id)
                 .execute(&self.pool)
                 .await
                 .unwrap()
@@ -79,9 +84,9 @@ impl TaskRepository for TaskStorage {
 
     async fn get_subtasks(&self, task_id: Uuid) -> Vec<TaskEntity> {
         let result = 
-            sqlx::query("SELECT * FROM Tasks WHERE RootTaskId = ?")
-                .bind(task_id.to_string())
-                .map(|row: MySqlRow| {
+            sqlx::query("SELECT * FROM Tasks WHERE RootTaskId = $1")
+                .bind(task_id)
+                .map(|row: PgRow| {
                     convert::row_to_task_entity(&row)
                 })
                 .fetch_all(&self.pool)
@@ -90,33 +95,35 @@ impl TaskRepository for TaskStorage {
         result.unwrap_or(vec![])
     }
 
-    async fn get_root_task_batch(&self, take: u32, continuation_token: &str, sort_by: &str, descending: bool) -> (Vec<domain::models::TaskEntity>, String) {
+    async fn get_root_task_batch(&self, take: i32, continuation_token: &str, sort_by: &str, descending: bool) -> (Vec<domain::models::TaskEntity>, String) {
         let sort = if descending { "DESC" } else { "ASC" };
-        let skip = continuation_token.parse::<u32>().unwrap();
-        let result = 
-            sqlx::query("SELECT * FROM Tasks WHERE RootTaskId = NULL ORDER BY ? ? LIMIT ? OFFSET ?")
+        let skip = continuation_token.parse::<i32>().unwrap();
+        let entities = 
+            sqlx::query(format!("SELECT * FROM Tasks WHERE RootTaskId IS NULL ORDER BY $1 {} LIMIT $2 OFFSET $3", sort).as_str())
                 .bind(sort_by)
-                .bind(sort)
                 .bind(take)
                 .bind(skip)
-                .map(|row: MySqlRow| {
+                .map(|row: PgRow| {
                     convert::row_to_task_entity(&row)
                 })
                 .fetch_all(&self.pool)
-                .await;
+                .await
+                .unwrap();
 
-        (result.unwrap_or(vec![]), {take + skip}.to_string())
+        let skip = if {entities.len() as i32} < take { skip + entities.len() as i32 } else { skip + take };
+
+        (entities, skip.to_string())
     }
 
-    async fn search_tasks(&self, phrase: &str, take: u32, continuation_token: &str) -> (Vec<domain::models::TaskSearchEntity>, String) {
-        let skip = continuation_token.parse::<u32>().unwrap();
+    async fn search_tasks(&self, phrase: &str, take: i32, continuation_token: &str) -> (Vec<domain::models::TaskSearchEntity>, String) {
+        let skip = continuation_token.parse::<i32>().unwrap();
         let result = 
-            sqlx::query("SELECT * FROM Tasks WHERE Summary LIKE ? OR Description LIKE ? ORDER BY CreateDate LIMIT ? OFFSET ?")
+            sqlx::query("SELECT * FROM Tasks WHERE Summary LIKE $1 OR Description LIKE $2 ORDER BY CreateDate LIMIT $3 OFFSET $4")
                 .bind(format!("%{}%", phrase))
                 .bind(format!("%{}%", phrase))
                 .bind(take)
                 .bind(skip)
-                .map(|row: MySqlRow| {
+                .map(|row: PgRow| {
                     convert::row_to_task_search_entity(&row)
                 })
                 .fetch_all(&self.pool)
@@ -140,7 +147,7 @@ inner join cte \
 ) \
 select cte.Id as val from cte;", task_id.to_string()).as_str())
             .bind(task_id.to_string())
-            .map(|row: MySqlRow| {
+            .map(|row: PgRow| {
                 Uuid::parse_str(row.get("val")).unwrap()
             })
             .fetch_all(&self.pool)
@@ -150,11 +157,10 @@ select cte.Id as val from cte;", task_id.to_string()).as_str())
     }
 
     async fn update_task_root(&self, task_id: Uuid, new_root_id: Option<Uuid>) -> Result<(), app::errors::Error> {
-        let new_root_id = new_root_id.map_or(String::from("NULL"), |u| u.to_string());
         let affected = 
-            sqlx::query("UPDATE Tasks SET RootTaskId = ? WHERE Id = ?")
+            sqlx::query("UPDATE Tasks SET RootTaskId = $1 WHERE Id = $2")
                 .bind(new_root_id)
-                .bind(task_id.to_string())
+                .bind(task_id)
                 .execute(&self.pool)
                 .await
                 .unwrap()
@@ -165,13 +171,13 @@ select cte.Id as val from cte;", task_id.to_string()).as_str())
 
     async fn update_task(&self, id: Uuid, summary: &str, description: Option<&str>, due_date: DateTime<Utc>, priority: domain::enums::TaskPriority, status: domain::enums::TaskStatus) -> Result<(), app::errors::Error> {
         let affected = 
-            sqlx::query("UPDATE Tasks SET Summary = ?, Description = ?, DueDate = ?, Priority = ?, Status = ?, WHERE Id = ?")
+            sqlx::query("UPDATE Tasks SET Summary = $1, Description = $2, DueDate = $3, Priority = $4, Status = $5 WHERE Id = $6")
                 .bind(summary)
                 .bind(description)
                 .bind(due_date)
-                .bind(convert::priority_to_str(priority))
-                .bind(convert::status_to_str(status))
-                .bind(id.to_string())
+                .bind(convert::priority_to_i16(priority))
+                .bind(convert::status_to_i16(status))
+                .bind(id)
                 .execute(&self.pool)
                 .await
                 .unwrap()
@@ -185,52 +191,58 @@ select cte.Id as val from cte;", task_id.to_string()).as_str())
 impl LogRepository for LogStorage {
     async fn insert(&self, entity: LogEntity) {
         let _ = 
-            sqlx::query("INSERT INTO Logs (Id, Action, TimestampMsec, EntityId, EntityType, Payload) VALUES (?, ?, ?, ?, ?, ?)")
-                .bind(entity.id.to_string())
-                .bind(convert::action_to_str(entity.action))
+            sqlx::query("INSERT INTO Logs (Id, Action, TimestampMsec, EntityId, EntityType, Payload) VALUES ($1, $2, $3, $4, $5, $6)")
+                .bind(entity.id)
+                .bind(convert::action_to_i16(entity.action))
                 .bind(entity.timestamp)
-                .bind(entity.entity_id.map_or(String::from("NULL"), |u| u.to_string()))
+                .bind(entity.entity_id)
                 .bind(entity.entity_type)
                 .bind(entity.payload)
                 .execute(&self.pool)
                 .await;
     }
 
-    async fn get_batch_by_entity_type(&self, entity_type: &str, continuation_token: &str, take: u32, descending: bool) -> (Vec<domain::models::LogEntity>, String) {
-        let skip = continuation_token.parse::<u32>().unwrap();
+    async fn get_batch_by_entity_type(&self, entity_type: &str, continuation_token: &str, take: i32, descending: bool) -> (Vec<domain::models::LogEntity>, String) {
+        let skip = continuation_token.parse::<i32>().unwrap();
         let sort = if descending { "DESC" } else { "ASC" };
 
-        let result = 
-            sqlx::query("SELECT * FROM Logs WHERE EntityType = ? ORDER BY TimestampMsec ? LIMIT ? OFFSET ?")
+        let entities = 
+            sqlx::query("SELECT * FROM Logs WHERE EntityType = $1 ORDER BY TimestampMsec $2 LIMIT $3 OFFSET $4")
                 .bind(entity_type)
                 .bind(sort)
                 .bind(take)
                 .bind(skip)
-                .map(|row: MySqlRow| {
+                .map(|row: PgRow| {
                     convert::row_to_log_entity(&row)
                 })
                 .fetch_all(&self.pool)
-                .await;
+                .await
+                .unwrap();
 
-        (result.unwrap_or(vec![]), {take + skip}.to_string())
+        let skip = if {entities.len() as i32} < take { skip + entities.len() as i32 } else { skip + take };
+
+        (entities, skip.to_string())
     }
 
-    async fn get_batch_by_entity(&self, entity_id: Uuid, continuation_token: &str, take: u32, descending: bool) -> (Vec<domain::models::LogEntity>, String) {
-        let skip = continuation_token.parse::<u32>().unwrap();
+    async fn get_batch_by_entity(&self, entity_id: Uuid, continuation_token: &str, take: i32, descending: bool) -> (Vec<domain::models::LogEntity>, String) {
+        let skip = continuation_token.parse::<i32>().unwrap();
         let sort = if descending { "DESC" } else { "ASC" };
 
-        let result = 
-            sqlx::query("SELECT * FROM Logs WHERE EntityId = ? ORDER BY TimestampMsec ? LIMIT ? OFFSET ?")
-                .bind(entity_id.to_string())
+        let entities = 
+            sqlx::query("SELECT * FROM Logs WHERE EntityId = $1 ORDER BY TimestampMsec $2 LIMIT $3 OFFSET $4")
+                .bind(entity_id)
                 .bind(sort)
                 .bind(take)
                 .bind(skip)
-                .map(|row: MySqlRow| {
+                .map(|row: PgRow| {
                     convert::row_to_log_entity(&row)
                 })
                 .fetch_all(&self.pool)
-                .await;
+                .await
+                .unwrap();
 
-        (result.unwrap_or(vec![]), {take + skip}.to_string())
+        let skip = if {entities.len() as i32} < take { skip + entities.len() as i32 } else { skip + take };
+
+        (entities, skip.to_string())
     }
 }

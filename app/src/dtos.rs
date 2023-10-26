@@ -15,16 +15,6 @@ pub struct LogEntryDto {
     payload: Option<String>
 }
 
-#[derive(Serialize)]
-pub struct CreateTaskResponse {
-    task_id: String
-}
-
-#[derive(Deserialize)]
-pub struct TaskRootChangeRequest {
-    pub root_id: String
-}
-
 #[derive(Debug, Serialize)]
 pub struct TaskBaseDto {
     id: String,
@@ -37,10 +27,8 @@ pub struct TaskBaseDto {
 pub struct TaskDetailedDto {
     root_id: Option<String>,
 
-    #[serde(with = "chrono::serde::ts_seconds")]
     create_date: DateTime<chrono::Utc>,
 
-    #[serde(with = "chrono::serde::ts_seconds")]
     due_date: DateTime<chrono::Utc>,
 
     #[serde(flatten)]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::Utc;
 use domain::models::LogEntity;
 use uuid::Uuid;
@@ -5,11 +7,11 @@ use uuid::Uuid;
 use crate::{repos::LogRepository, dtos::{TaskAction, LogEntryDto}};
 
 pub struct LogService {
-    repo: Box<dyn LogRepository>
+    repo: Arc<dyn LogRepository>
 }
 
 impl LogService {
-    pub fn new(repo: Box<dyn LogRepository>) -> LogService {
+    pub fn new(repo: Arc<dyn LogRepository>) -> LogService {
         LogService { repo }
     }
 
@@ -26,14 +28,14 @@ impl LogService {
         self.repo.insert(log_entry).await;
     }
 
-    pub async fn get_task_action_log_batch(&self, continuation_token: &str, take: u32, descending: bool) -> (Vec<LogEntryDto>, String) {
+    pub async fn get_task_action_log_batch(&self, continuation_token: &str, take: i32, descending: bool) -> (Vec<LogEntryDto>, String) {
         let (entities, ct) = self.repo
             .get_batch_by_entity_type("TaskEntity", continuation_token, take, descending).await;
 
         (entities.iter().map(|e| LogEntryDto::new(e)).collect(), ct)
     }
 
-    pub async fn get_task_action_log_batch_by_task(&self, task_id: Uuid, continuation_token: &str, take: u32, descending: bool) -> (Vec<LogEntryDto>, String) {
+    pub async fn get_task_action_log_batch_by_task(&self, task_id: Uuid, continuation_token: &str, take: i32, descending: bool) -> (Vec<LogEntryDto>, String) {
         let (entities, ct) = self.repo
             .get_batch_by_entity(task_id, continuation_token, take, descending).await;
 

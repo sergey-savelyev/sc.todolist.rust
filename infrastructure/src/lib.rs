@@ -1,27 +1,32 @@
 use app::{tasks::TaskService, logs::LogService};
 use db::{LogStorage, TaskStorage};
-use sqlx::mysql::MySqlPoolOptions;
+use sqlx::{postgres::PgPoolOptions, PgPool};
 
-use std::{time::Duration, rc::Rc};
+use std::{time::Duration, sync::Arc};
 
 pub mod db;
 pub mod convert;
 
-pub struct ServiceProvider(Box<TaskService>, Rc<LogService>);
+pub struct ServiceProvider {
+    pool: PgPool
+}
 
-pub async fn create_service_provider(connection_string: &str) -> ServiceProvider {
-    let pool = MySqlPoolOptions::new()
-        .max_connections(10)
-        .acquire_timeout(Duration::from_secs(3))
-        .connect(connection_string)
-        .await
-        .expect("can't connect to database");
+impl ServiceProvider {
+    pub fn new(connection_string: &str) -> ServiceProvider {
+        ServiceProvider { 
+            pool: PgPoolOptions::new()
+                    .max_connections(10)
+                    .acquire_timeout(Duration::from_secs(3))
+                    .connect_lazy(connection_string)
+                    .expect("can't connect to database")
+        }
+    }
 
-    let log_repo = Box::new(LogStorage::new(pool.clone()));
-    let task_repo = Box::new(TaskStorage::new(pool.clone()));
+    pub fn task_service(&self) -> Arc<TaskService> {
+        Arc::new(TaskService::new(Arc::new(TaskStorage::new(self.pool.clone())), Arc::new(LogService::new(Arc::new(LogStorage::new(self.pool.clone()))))))
+    }
 
-    let log_service = Rc::new(LogService::new(log_repo));
-    let task_service = Box::new(TaskService::new(task_repo, Rc::clone(&log_service)));
-
-    ServiceProvider(task_service, log_service)
+    pub fn log_service(&self) -> Arc<LogService> {
+        Arc::new(LogService::new(Arc::new(LogStorage::new(self.pool.clone()))))
+    }
 }
