@@ -27,8 +27,6 @@ async fn main() {
         .allow_headers([header::AUTHORIZATION, header::ACCEPT, header::CONTENT_TYPE]);
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let sevice_provider = Arc::new(ServiceProvider::new(&database_url));
-    sevice_provider.migration_service().migrate().await.unwrap_or_else(|e| println!("{:?}", e));
     
     let app = 
         Router::new()
@@ -43,7 +41,7 @@ async fn main() {
             .route("/api/tasks/:id/logs", get(logs_handle::get_task_logs))
             .route("/api/tasks/logs", get(logs_handle::get_all_logs))
 
-            .with_state(sevice_provider)
+            .with_state(Arc::new(ServiceProvider::new(&database_url)))
             .layer(cors);
 
     axum::Server::bind(&"0.0.0.0:3005".parse().unwrap())

@@ -1,5 +1,5 @@
 use app::{tasks::TaskService, logs::LogService};
-use db::{LogStorage, TaskStorage, DbMigrator};
+use db::{LogStorage, TaskStorage };
 use sqlx::{postgres::PgPoolOptions, PgPool};
 
 use std::{time::Duration, sync::Arc};
@@ -20,10 +20,6 @@ impl ServiceProvider {
                     .connect_lazy(connection_string)
                     .expect("can't connect to database"),
         }
-    }
-
-    pub fn migration_service(&self) -> Arc<DbMigrator> {
-        Arc::new(DbMigrator::new(self.pool.clone()))
     }
 
     pub fn task_service(&self) -> Arc<TaskService> {

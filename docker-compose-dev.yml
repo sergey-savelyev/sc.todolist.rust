@@ -1,0 +1,12 @@
+version: '3'
+
+services:
+  database:
+    image: 'postgres:latest'
+    env_file:
+      - .env
+    ports:
+      - 5434:5432
+    volumes:
+      - ./db-data/:/var/lib/postgresql/data/
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql

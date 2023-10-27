@@ -3,26 +3,10 @@ use domain::models::{TaskEntity, LogEntity};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{postgres::{PgPool, PgRow}, Row, migrate::Migrator};
+use sqlx::{postgres::{PgPool, PgRow}, Row};
 use uuid::Uuid;
 
 use crate::convert;
-
-static MIGRATOR: Migrator = sqlx::migrate!("../migrations");
-
-pub struct DbMigrator {
-    pool: PgPool
-}
-
-impl DbMigrator {
-    pub fn new(pool: PgPool) -> DbMigrator {
-        DbMigrator { pool }
-    }
-
-    pub async fn migrate(&self) -> Result<(), sqlx::migrate::MigrateError> {
-        Ok(MIGRATOR.run(&self.pool).await?)
-    }
-}
 
 pub struct TaskStorage {
     // At first I intended to use Arc (thread-safe ref count pointer)
