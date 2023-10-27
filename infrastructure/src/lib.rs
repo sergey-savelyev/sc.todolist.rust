@@ -1,6 +1,6 @@
 use app::{tasks::TaskService, logs::LogService};
 use db::{LogStorage, TaskStorage };
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::postgres::PgPoolOptions;
 
 use std::{time::Duration, sync::Arc};
 
@@ -8,25 +8,33 @@ pub mod db;
 pub mod convert;
 
 pub struct ServiceProvider {
-    pool: PgPool
+    task_service: Arc<TaskService>,
+    log_service: Arc<LogService>
 }
 
 impl ServiceProvider {
     pub fn new(connection_string: &str) -> ServiceProvider {
+        let pool = PgPoolOptions::new()
+            .max_connections(10)
+            .acquire_timeout(Duration::from_secs(3))
+            .connect_lazy(connection_string)
+            .expect("can't connect to database");
+
+        // Arc<T> is a thread-safe reference count pointer, actually when clone() called it just passing the same pointer, but increasing ref count
+        // Exactly what we need here
+        let log_ervice_ptr: Arc<LogService> = Arc::new(LogService::new(Arc::new(LogStorage::new(pool.clone()))));
+
         ServiceProvider { 
-            pool: PgPoolOptions::new()
-                    .max_connections(10)
-                    .acquire_timeout(Duration::from_secs(3))
-                    .connect_lazy(connection_string)
-                    .expect("can't connect to database"),
+            task_service: Arc::new(TaskService::new(Arc::new(TaskStorage::new(pool.clone())), Arc::clone(&log_ervice_ptr))),
+            log_service: log_ervice_ptr
         }
     }
 
     pub fn task_service(&self) -> Arc<TaskService> {
-        Arc::new(TaskService::new(Arc::new(TaskStorage::new(self.pool.clone())), Arc::new(LogService::new(Arc::new(LogStorage::new(self.pool.clone()))))))
+        self.task_service.clone()
     }
 
     pub fn log_service(&self) -> Arc<LogService> {
-        Arc::new(LogService::new(Arc::new(LogStorage::new(self.pool.clone()))))
+        self.log_service.clone()
     }
 }
