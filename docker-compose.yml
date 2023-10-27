@@ -10,3 +10,26 @@ services:
     volumes:
       - ./db-data/:/var/lib/postgresql/data/
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "sh -c 'pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DATABASE}'"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  webapi:
+    build: .
+    ports:
+      - "3005:3005"
+    environment:
+      - RUST_LOG=info
+    env_file:
+      - .env
+    restart: always
+    depends_on:
+      database:
+        condition: service_healthy
+  client:
+    depends_on:
+      - webapi
+    build: ./client
+    ports:
+      - '5454:4173'

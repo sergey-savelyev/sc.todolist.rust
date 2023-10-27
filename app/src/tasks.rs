@@ -25,10 +25,11 @@ impl TaskService {
 
     pub async fn get_task(&self, id: Uuid) -> Result<TaskFullDto, Error> {
         let entity = self.repo.get_by_id(id).await?;
-        let root_entity = self.repo
-            .get_by_id(id)
-            .await
-            .map_or(None, |e| Some(e));
+        let root_entity = match entity.root_task_id {
+            Some(root_id) => Some(self.repo.get_by_id(root_id).await.unwrap()),
+            None => None
+        };
+
         let subtasks = self.repo.get_subtasks(id).await;
         
         Ok(TaskFullDto::new(&entity, root_entity.as_ref(), &subtasks))

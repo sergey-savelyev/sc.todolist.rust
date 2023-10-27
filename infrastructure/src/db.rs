@@ -3,10 +3,26 @@ use domain::models::{TaskEntity, LogEntity};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{postgres::{PgPool, PgRow}, Row};
+use sqlx::{postgres::{PgPool, PgRow}, Row, migrate::Migrator};
 use uuid::Uuid;
 
 use crate::convert;
+
+static MIGRATOR: Migrator = sqlx::migrate!("../migrations");
+
+pub struct DbMigrator {
+    pool: PgPool
+}
+
+impl DbMigrator {
+    pub fn new(pool: PgPool) -> DbMigrator {
+        DbMigrator { pool }
+    }
+
+    pub async fn migrate(&self) -> Result<(), sqlx::migrate::MigrateError> {
+        Ok(MIGRATOR.run(&self.pool).await?)
+    }
+}
 
 pub struct TaskStorage {
     // At first I intended to use Arc (thread-safe ref count pointer)
@@ -99,8 +115,7 @@ impl TaskRepository for TaskStorage {
         let sort = if descending { "DESC" } else { "ASC" };
         let skip = continuation_token.parse::<i32>().unwrap();
         let entities = 
-            sqlx::query(format!("SELECT * FROM Tasks WHERE RootTaskId IS NULL ORDER BY $1 {} LIMIT $2 OFFSET $3", sort).as_str())
-                .bind(sort_by)
+            sqlx::query(format!("SELECT * FROM Tasks WHERE RootTaskId IS NULL ORDER BY {} {} LIMIT $1 OFFSET $2", sort_by, sort).as_str())
                 .bind(take)
                 .bind(skip)
                 .map(|row: PgRow| {
@@ -117,8 +132,8 @@ impl TaskRepository for TaskStorage {
 
     async fn search_tasks(&self, phrase: &str, take: i32, continuation_token: &str) -> (Vec<domain::models::TaskSearchEntity>, String) {
         let skip = continuation_token.parse::<i32>().unwrap();
-        let result = 
-            sqlx::query("SELECT * FROM Tasks WHERE Summary LIKE $1 OR Description LIKE $2 ORDER BY CreateDate LIMIT $3 OFFSET $4")
+        let entities = 
+            sqlx::query("SELECT Id, Summary, Description FROM Tasks WHERE RootTaskId IS NULL AND (Summary ILIKE $1 OR Description ILIKE $2) ORDER BY CreateDate LIMIT $3 OFFSET $4")
                 .bind(format!("%{}%", phrase))
                 .bind(format!("%{}%", phrase))
                 .bind(take)
@@ -127,9 +142,12 @@ impl TaskRepository for TaskStorage {
                     convert::row_to_task_search_entity(&row)
                 })
                 .fetch_all(&self.pool)
-                .await;
+                .await
+                .unwrap_or(vec![]);
 
-        (result.unwrap_or(vec![]), {take + skip}.to_string())
+        let skip = if {entities.len() as i32} < take { skip + entities.len() as i32 } else { skip + take };
+
+        (entities, skip.to_string())
     }
 
     async fn get_all_subtasks_recursive(&self, task_id: Uuid) -> Vec<Uuid> {
@@ -207,7 +225,7 @@ impl LogRepository for LogStorage {
         let sort = if descending { "DESC" } else { "ASC" };
 
         let entities = 
-            sqlx::query("SELECT * FROM Logs WHERE EntityType = $1 ORDER BY TimestampMsec $2 LIMIT $3 OFFSET $4")
+            sqlx::query(format!("SELECT * FROM Logs WHERE EntityType = $1 ORDER BY TimestampMsec {} LIMIT $3 OFFSET $4", sort).as_str())
                 .bind(entity_type)
                 .bind(sort)
                 .bind(take)

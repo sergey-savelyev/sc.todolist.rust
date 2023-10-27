@@ -3,18 +3,18 @@ use uuid::Uuid;
 
 #[derive(Deserialize)]
 pub struct Pagination {
-    take: i32,
-    skip: i32,
-    sort_by: Option<String>,
+    take: Option<i32>,
+    continuation_token: Option<i32>,
+    order_by: Option<String>,
     descending_sort: Option<bool>,
     descending: Option<bool> // backward compatibility with C# project
 }
 
 impl Pagination {
-    pub fn take(&self) -> i32 { self.take }
-    pub fn skip(&self) -> i32 { self.skip }
-    pub fn sort_by(&self) -> Option<&str> { 
-        if let Some(s) = self.sort_by.as_ref() {
+    pub fn take(&self) -> Option<i32> { self.take }
+    pub fn continuation_token(&self) -> Option<i32> { self.continuation_token }
+    pub fn order_by(&self) -> Option<&str> { 
+        if let Some(s) = self.order_by.as_ref() {
             return Some(s);
         }
 

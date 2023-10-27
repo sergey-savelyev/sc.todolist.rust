@@ -1,7 +1,6 @@
 use domain::{enums::{TaskAction, TaskPriority, TaskStatus}, models::{TaskEntity, TaskSearchEntity, LogEntity}};
 
 use sqlx::{postgres::PgRow, Row};
-use uuid::Uuid;
 
 pub fn row_to_task_entity(row: &PgRow) -> TaskEntity {
     TaskEntity {
@@ -18,7 +17,7 @@ pub fn row_to_task_entity(row: &PgRow) -> TaskEntity {
 
 pub fn row_to_task_search_entity(row: &PgRow) -> TaskSearchEntity {
     TaskSearchEntity {
-        id: Uuid::parse_str(row.get("id")).unwrap(),
+        id: row.get("id"),
         summary: row.get("summary"),
         description: row.get("description"),
     }
@@ -26,10 +25,10 @@ pub fn row_to_task_search_entity(row: &PgRow) -> TaskSearchEntity {
 
 pub fn row_to_log_entity(row: &PgRow) -> LogEntity {
     LogEntity {
-        id: Uuid::parse_str(row.get("id")).unwrap(),
+        id: row.get("id"),
         action: action_from_i16(row.get("action")),
         timestamp: row.get("timestampmsec"),
-        entity_id: Uuid::parse_str(row.get("entityid")).map_or(None, |u| Some(u)),
+        entity_id: row.get("entityid"),
         entity_type: row.get("entitytype"),
         payload: row.get("payload"),
     }

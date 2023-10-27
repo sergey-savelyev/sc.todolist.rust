@@ -50,7 +50,11 @@ pub async fn get_tasks_batch(
     State(services): State<Arc<ServiceProvider>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let (batch, continuation_token) = services.task_service()
-        .get_root_task_batch(pagination.take(), &pagination.skip().to_string(), &pagination.sort_by().unwrap_or("CreateDate"), pagination.descending_sort().unwrap_or(false))
+        .get_root_task_batch(
+            pagination.take().unwrap_or(20), 
+            &pagination.continuation_token().unwrap_or(0).to_string(), 
+            &pagination.order_by().unwrap_or("CreateDate"), 
+            pagination.descending_sort().unwrap_or(false))
         .await;
 
     Ok(Json(json!(BatchResponse::new(batch, continuation_token))))
@@ -62,7 +66,10 @@ pub async fn search_tasks(
     State(services): State<Arc<ServiceProvider>>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
     let (batch, continuation_token) = services.task_service()
-        .search_tasks(&phrase, pagination.take(), &pagination.skip().to_string())
+        .search_tasks(
+            &phrase, 
+            pagination.take().unwrap_or(20), 
+            &pagination.continuation_token().unwrap_or(0).to_string())
         .await;
 
     Ok(Json(json!(BatchResponse::new(batch, continuation_token))))
