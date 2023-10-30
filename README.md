@@ -21,6 +21,8 @@ The application is split for 5 layers implemented in different crates:
 - webapi: server
 - client;
 
+The app keeps each service in a single instance by using Arc's (thread-safe reference count pointers). Please note, that Arc::clone(&foo) doesn't clone the foo, but returns a pointer and increase it's reference count.
+
 ## run
 
     docker compose up
